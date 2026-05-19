@@ -23,34 +23,41 @@ fn replace_spaces(path: &Path) -> Result<PathBuf, String> {
     Ok(path.with_file_name(name.replace(' ', "_")))
 }
 
-fn process_file(file: io::Result<DirEntry>) -> Result<(), String> {
+fn process_file(file: io::Result<DirEntry>) -> Result<bool, String> {
     let old_path = file
         .map_err(|e| format!("Failed to read entry: {}", e))?
         .path();
     let new_path = replace_spaces(&old_path)?;
 
     if old_path == new_path {
-        return Ok(());
+        return Ok(false);
     }
 
     rename(&old_path, &new_path)
         .map_err(|e| format!("Failed to rename {}: {}", old_path.display(), e))?;
 
     println!("Renamed {} to {}", old_path.display(), new_path.display());
-    Ok(())
+    Ok(true)
 }
 
-fn kill_spaces(dir: &Path) {
+fn kill_spaces(dir: &Path) -> bool {
     let files = match read_dir(dir) {
         Ok(f) => f,
-        Err(e) => return eprintln!("Failed to read directory {}: {}", dir.display(), e),
+        Err(e) => {
+            eprintln!("Failed to read directory {}: {}", dir.display(), e);
+            return false;
+        }
     };
 
+    let mut changed = false;
     for file in files {
-        if let Err(e) = process_file(file) {
-            eprintln!("{}", e);
+        match process_file(file) {
+            Ok(true) => changed = true,
+            Ok(false) => {}
+            Err(e) => eprintln!("{}", e),
         }
     }
+    changed
 }
 
 pub fn run_kill_spaces(dirs: &[String]) {
@@ -59,7 +66,14 @@ pub fn run_kill_spaces(dirs: &[String]) {
         std::process::exit(1);
     });
 
+    let mut changed = false;
     for dir in dirs {
-        kill_spaces(&dir);
+        if kill_spaces(&dir) {
+            changed = true;
+        }
+    }
+
+    if !changed {
+        println!("No filepaths to change!");
     }
 }
